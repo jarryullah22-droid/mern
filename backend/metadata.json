@@ -1,0 +1,7 @@
+{
+  "name": "CustomerHub - Customer Manager",
+  "description": "A streamlined customer management application to add, view, edit, delete, search, and manage customer records with real-time validation and persistent storage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
