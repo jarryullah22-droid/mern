@@ -3,7 +3,7 @@ import { Customer, CustomerFormData, User, AuthResponse } from '../types/custome
 // In production the Express server hosts both the API and the built frontend,
 // so a relative path works. During local dev (Vite on :3000, API on :3001) set
 // VITE_API_URL in your .env, or rely on the dev proxy in vite.config.ts.
-const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '';
+const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'https://mern-kappa-liart.vercel.app';
 const API_BASE = RAW_BASE.replace(/\/$/, '');
 
 const TOKEN_KEY = 'customerhub_token';
