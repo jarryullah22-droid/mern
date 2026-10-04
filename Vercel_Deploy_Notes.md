@@ -69,8 +69,26 @@ Environment variable:
    changing it.
 4. Confirm the API can reach Atlas: open
    https://mern-kappa-liart.vercel.app/api/health — it should return
-   `{"ok":true,"db":"connected"}`. If `db` is `disconnected`, fix Atlas Network
-   Access (allow `0.0.0.0/0`) and the `MONGODB_URI` credentials.
+   `{"ok":true,"db":"connected"}`.
+
+---
+
+## 4. Troubleshooting `GET /api/health`
+
+The health endpoint reports the exact reason it cannot reach MongoDB.
+
+| Response | Meaning | Fix |
+| --- | --- | --- |
+| `db":"disconnected","error":"...EBADNAME _mongodb._tcp.<cluster>..."` | The `MONGODB_URI` host is invalid — usually a leftover placeholder (`<cluster>`/`<password>`) or stray whitespace/quotes | Copy the real string from Atlas → Connect → Drivers; paste it with no quotes and no spaces |
+| `db":"disconnected","error":"...buffering timed out..."` | DNS resolved but the server could not be reached | Atlas → Network Access → allow `0.0.0.0/0`; verify DB user + password |
+| `db":"disconnected","error":"MONGODB_URI still contains a placeholder..."` | Guard added in `server.js` caught a `<...>` placeholder | Replace the placeholder with the real value |
+| `db":"connected"` | Working | — |
+
+`MONGODB_URI` must look exactly like (no quotes, no spaces, no line breaks):
+
+```
+mongodb+srv://<dbUser>:<dbPassword>@<cluster>.mongodb.net/<dbName>?retryWrites=true&w=majority
+```
 
 ---
 

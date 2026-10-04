@@ -11,24 +11,37 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3001;
-const MONGODB_URI = process.env.MONGODB_URI;
-const JWT_SECRET = process.env.JWT_SECRET;
+
+// Environment values pasted into a dashboard often pick up stray whitespace,
+// a trailing newline, or surrounding quotes. Any of those makes the SRV
+// hostname invalid and yields "querySrv EBADNAME". Clean them up here.
+const MONGODB_URI = (process.env.MONGODB_URI || '')
+  .trim()
+  .replace(/^['"]|['"]$/g, '')
+  .trim();
+const JWT_SECRET = (process.env.JWT_SECRET || '').trim();
 const TOKEN_TTL = process.env.TOKEN_TTL || '7d';
 
-if (!MONGODB_URI) {
-  console.error(
-    '[server] MONGODB_URI is not set.\n' +
-      '         Create a .env file (see .env.example) and add your MongoDB connection string.'
-  );
-  process.exit(1);
+// Returns a human-readable problem with the DB configuration, or null if OK.
+// It is surfaced through GET /api/health and the /api 503 response instead of
+// crashing the serverless function, so the real cause stays visible.
+function configError() {
+  if (!MONGODB_URI) {
+    return 'MONGODB_URI is not set. Add your MongoDB Atlas connection string (Atlas → Connect → Drivers).';
+  }
+  if (/[<>]/.test(MONGODB_URI)) {
+    return 'MONGODB_URI still contains a placeholder (e.g. <password> or <cluster>). Copy the real connection string from Atlas → Connect → Drivers.';
+  }
+  if (!/^mongodb(\+srv)?:\/\//.test(MONGODB_URI)) {
+    return 'MONGODB_URI must start with "mongodb://" or "mongodb+srv://".';
+  }
+  return null;
 }
 
 if (!JWT_SECRET) {
   console.error(
-    '[server] JWT_SECRET is not set.\n' +
-      '         Add a long random string as JWT_SECRET in your .env file (see .env.example).'
+    '[server] JWT_SECRET is not set — sign-in will fail until you add a long random string.'
   );
-  process.exit(1);
 }
 
 /* ------------------------------------------------------------------ *
@@ -45,6 +58,11 @@ if (!JWT_SECRET) {
 let dbPromise = null;
 
 function connectDB() {
+  const cfg = configError();
+  if (cfg) {
+    dbPromise = null;
+    return Promise.reject(new Error(cfg));
+  }
   if (!dbPromise) {
     mongoose.set('strictQuery', true);
     dbPromise = mongoose
@@ -134,6 +152,9 @@ const signToken = (user) =>
 
 // Express middleware: reject the request unless it carries a valid Bearer token.
 function requireAuth(req, res, next) {
+  if (!JWT_SECRET) {
+    return res.status(500).json({ error: 'Server auth is not configured (JWT_SECRET missing).' });
+  }
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) return res.status(401).json({ error: 'Authentication required' });
@@ -190,6 +211,9 @@ app.use('/api', async (req, res, next) => {
 
 /* ------------------------------- Health ------------------------------ */
 app.get('/api/health', async (_req, res) => {
+  const cfg = configError();
+  if (cfg) return res.json({ ok: true, db: 'disconnected', error: cfg });
+
   let db = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
   let error;
   try {
