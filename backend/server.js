@@ -32,6 +32,43 @@ if (!JWT_SECRET) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Database connection (serverless-safe)
+ * ------------------------------------------------------------------ *
+ * On Vercel the app runs as a serverless function. A cold start may
+ * handle a request BEFORE the connection finishes, and the function can
+ * be frozen between requests. So we:
+ *   1. cache the connection promise so we only ever connect once, and
+ *   2. await it before touching the DB (see the middleware below).
+ * Without this, the first login/register request buffers and can fail
+ * with "Operation `users.findOne()` buffering timed out after 10000ms".
+ */
+let dbPromise = null;
+
+function connectDB() {
+  if (!dbPromise) {
+    mongoose.set('strictQuery', true);
+    dbPromise = mongoose
+      .connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 10000,
+        // Keep the pool small so serverless invocations don't exhaust Atlas.
+        maxPoolSize: 10,
+      })
+      .then(async () => {
+        console.log('[server] Connected to MongoDB');
+        await seedAdmin();
+        return mongoose.connection;
+      })
+      .catch((err) => {
+        // Reset so the next request can retry instead of caching a failure.
+        dbPromise = null;
+        console.error('[server] MongoDB connection failed:', err.message);
+        throw err;
+      });
+  }
+  return dbPromise;
+}
+
+/* ------------------------------------------------------------------ *
  * Database models
  * ------------------------------------------------------------------ */
 const customerSchema = new mongoose.Schema(
@@ -136,12 +173,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Ensure the DB is connected before any /api request touches it.
+// (Health check is intentionally excluded so it can report the live state.)
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health') return next();
+  try {
+    await connectDB();
+    return next();
+  } catch (err) {
+    return res.status(503).json({
+      error: 'Database unavailable. Check MONGODB_URI and Atlas network access.',
+      detail: err.message,
+    });
+  }
+});
+
 /* ------------------------------- Health ------------------------------ */
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-  });
+app.get('/api/health', async (_req, res) => {
+  let db = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  let error;
+  try {
+    await connectDB();
+    db = 'connected';
+  } catch (err) {
+    error = err.message;
+  }
+  res.json({ ok: true, db, ...(error ? { error } : {}) });
 });
 
 /* ------------------------------ Auth --------------------------------- */
@@ -317,6 +374,7 @@ if (!process.env.VERCEL) {
 }
 
 // Create a default admin account on first run so there is a way to sign in.
+// Called from connectDB() once the connection is established.
 async function seedAdmin() {
   try {
     const email = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
@@ -336,15 +394,8 @@ async function seedAdmin() {
   }
 }
 
-mongoose
-  .connect(MONGODB_URI)
-  .then(async () => {
-    console.log('[server] Connected to MongoDB');
-    await seedAdmin();
-  })
-  .catch((err) => {
-    console.error('[server] MongoDB connection failed:', err.message);
-    console.error(
-      '[server] The API is running, but database calls will fail until MongoDB is reachable.'
-    );
-  });
+// Kick off the connection at startup (fire-and-forget is fine here — the
+// /api middleware awaits the same cached promise before serving requests).
+if (!process.env.VERCEL) {
+  connectDB().catch(() => {});
+}

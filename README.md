@@ -8,8 +8,8 @@ import/export customer records, with JWT authentication and persistent storage.
 
 ## Live URLs
 
-- Frontend: https://cust-mgt-sys.vercel.app
-- Backend API: https://pro-with-next-vmxq.vercel.app
+- Frontend: https://mern-qfdv.vercel.app
+- Backend API: https://mern-kappa-liart.vercel.app
 
 ## Structure
 
@@ -60,3 +60,11 @@ npm run dev               # http://localhost:3000 (proxies /api to :3001)
 
 Both folders deploy as separate Vercel projects. See `Vercel_Deploy_Notes.md`
 for the full setup (root directory, build settings and env vars).
+
+## Notes
+
+- The Express API opens its MongoDB connection lazily and awaits it before
+  handling any `/api` request, so it works correctly as a Vercel serverless
+  function (cold starts included).
+- Atlas **Network Access** must allow `0.0.0.0/0` (or Vercel's IPs), otherwise
+  serverless functions cannot reach the database.

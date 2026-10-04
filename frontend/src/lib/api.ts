@@ -1,9 +1,14 @@
 import { Customer, CustomerFormData, User, AuthResponse } from '../types/customer';
 
-// In production the Express server hosts both the API and the built frontend,
-// so a relative path works. During local dev (Vite on :3000, API on :3001) set
-// VITE_API_URL in your .env, or rely on the dev proxy in vite.config.ts.
-const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'https://mern-kappa-liart.vercel.app';
+// Base URL of the backend API.
+//
+// In production the frontend and the Express API are two separate Vercel
+// projects, so the API base MUST point at the backend deployment. Set
+// VITE_API_URL in the frontend project's Vercel env vars; the value below is a
+// safe fallback to the deployed backend so a missing env var never sends login
+// requests to the wrong host.
+const DEFAULT_API_BASE = 'https://mern-kappa-liart.vercel.app';
+const RAW_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || DEFAULT_API_BASE).trim();
 const API_BASE = RAW_BASE.replace(/\/$/, '');
 
 const TOKEN_KEY = 'customerhub_token';
@@ -28,13 +33,22 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      ...init,
+    });
+  } catch {
+    // Network / DNS / CORS failures land here — surface a clearer message.
+    throw new ApiError(
+      `Cannot reach the API at "${API_BASE}". Check VITE_API_URL and that the backend is running.`,
+      0
+    );
+  }
 
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
