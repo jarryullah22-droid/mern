@@ -7,7 +7,7 @@ const connectDB = require('./config/db');
 const app = express();
 
 // ---- middleware ----------------------------------------------------
-const origins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+const origins = (process.env.CORS_ORIGIN || 'https://mern-et51.vercel.app')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
